@@ -1,0 +1,80 @@
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: helpdesk_postgres
+    environment:
+      POSTGRES_USER: helpdesk
+      POSTGRES_PASSWORD: helpdesk
+      POSTGRES_DB: helpdesk
+    ports:
+      - "5433:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+
+  redis:
+    image: redis:7
+    container_name: helpdesk_redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redisdata:/data
+
+  api:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    container_name: helpdesk_api
+    depends_on:
+      - postgres
+      - redis
+    env_file:
+      - apps/api/.env
+    environment:
+      PORT: 3001
+      DATABASE_URL: "postgresql://helpdesk:helpdesk@postgres:5432/helpdesk?schema=public"
+      REDIS_URL: "redis://redis:6379"
+      OLLAMA_HOST: "http://host.docker.internal:11434"
+      KB_STORAGE_DIR: /data/kb
+    volumes:
+      - kbdata:/data/kb
+    ports:
+      - "3001:3001"
+
+  worker:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    container_name: helpdesk_worker
+    depends_on:
+      - postgres
+      - redis
+    env_file:
+      - apps/api/.env
+    environment:
+      DATABASE_URL: "postgresql://helpdesk:helpdesk@postgres:5432/helpdesk?schema=public"
+      REDIS_URL: "redis://redis:6379"
+      OLLAMA_HOST: "http://host.docker.internal:11434"
+      KB_STORAGE_DIR: /data/kb
+    volumes:
+      - kbdata:/data/kb
+    command: ["pnpm", "--filter", "api", "worker"]
+
+  web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+    container_name: helpdesk_web
+    depends_on:
+      - api
+    env_file:
+      - apps/web/.env.local
+    environment:
+      NEXT_PUBLIC_API_URL: "http://localhost:3001"
+      API_INTERNAL_URL: "http://api:3001"
+    ports:
+      - "3000:3000"
+
+volumes:
+  kbdata:
+  pgdata:
+  redisdata:

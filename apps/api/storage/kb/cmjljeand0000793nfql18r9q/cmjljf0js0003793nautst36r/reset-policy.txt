@@ -1,0 +1,4 @@
+Password reset policy:
+- Use the “Forgot password” link on the login screen
+- Reset links expire in 15 minutes
+- If link expired, request a new reset email

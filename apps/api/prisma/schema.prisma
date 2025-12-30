@@ -1,0 +1,260 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum Role {
+  OWNER
+  ADMIN
+  AGENT
+  VIEWER
+}
+
+enum TicketStatus {
+  OPEN
+  IN_PROGRESS
+  RESOLVED
+  CLOSED
+}
+
+enum TicketPriority {
+  LOW
+  MEDIUM
+  HIGH
+  URGENT
+}
+
+enum KnowledgeSourceStatus {
+  QUEUED
+  INDEXING
+  READY
+  FAILED
+}
+
+enum JobType {
+  INDEX_KB_SOURCE
+}
+
+enum JobStatus {
+  QUEUED
+  RUNNING
+  SUCCEEDED
+  FAILED
+}
+
+enum FeedbackRating {
+  UP
+  DOWN
+}
+
+enum UsageEventType {
+  AI_ASSIST_CALL
+  KB_EMBEDDING
+}
+
+model User {
+  id               String          @id @default(cuid())
+  email            String          @unique
+  passwordHash     String
+  createdAt        DateTime        @default(now())
+  memberships      Membership[]
+  requestedTickets Ticket[]        @relation("TicketRequester")
+  assignedTickets  Ticket[]        @relation("TicketAssignee")
+  ticketComments   TicketComment[]
+  aiFeedback       AiFeedback[]
+  usageEvents      UsageEvent[]
+}
+
+model Tenant {
+  id        String   @id @default(cuid())
+  name      String
+  createdAt DateTime @default(now())
+  memberships      Membership[]
+  auditLogs        AuditLog[]
+  invites          Invite[]
+  tickets          Ticket[]
+  ticketComments   TicketComment[]
+  knowledgeSources KnowledgeSource[]
+  knowledgeChunks  KnowledgeChunk[]
+  jobs Job[]
+  aiFeedback  AiFeedback[]
+  usageEvents UsageEvent[]
+  entitlement Entitlement?
+}
+
+model Membership {
+  id        String   @id @default(cuid())
+  tenantId  String
+  userId    String
+  role      Role     @default(AGENT)
+  createdAt DateTime @default(now())
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  @@unique([tenantId, userId])
+  @@index([tenantId])
+  @@index([userId])
+}
+
+model AuditLog {
+  id        String   @id @default(cuid())
+  tenantId  String
+  actorId   String?
+  action    String
+  entity    String
+  entityId  String?
+  meta      Json?
+  createdAt DateTime @default(now())
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  @@index([tenantId, createdAt])
+}
+
+model Invite {
+  id        String    @id @default(cuid())
+  tenantId  String
+  email     String?
+  role      Role      @default(AGENT)
+  tokenHash String    @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdBy String
+  createdAt DateTime  @default(now())
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  @@index([tenantId, createdAt])
+}
+
+model Ticket {
+  id          String         @id @default(cuid())
+  tenantId    String
+  title       String
+  description String
+  status      TicketStatus   @default(OPEN)
+  priority    TicketPriority @default(MEDIUM)
+
+  requesterId String
+  assigneeId  String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tenant    Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  requester User   @relation("TicketRequester", fields: [requesterId], references: [id])
+  assignee  User?  @relation("TicketAssignee", fields: [assigneeId], references: [id])
+
+  comments TicketComment[]
+  feedback AiFeedback[]
+
+  @@index([tenantId, createdAt])
+  @@index([tenantId, status, priority])
+}
+
+model TicketComment {
+  id        String   @id @default(cuid())
+  tenantId  String
+  ticketId  String
+  authorId  String
+  body      String
+  createdAt DateTime @default(now())
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  ticket Ticket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  author User   @relation(fields: [authorId], references: [id])
+
+  @@index([ticketId, createdAt])
+  @@index([tenantId, createdAt])
+}
+
+model KnowledgeSource {
+  id          String              @id @default(cuid())
+  tenantId    String
+  filename    String
+  mimeType    String
+  sizeBytes   Int
+  storagePath String?
+  status      KnowledgeSourceStatus @default(QUEUED)
+  indexedAt DateTime?
+  error     String?
+  createdAt DateTime @default(now())
+  tenant  Tenant           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  chunks  KnowledgeChunk[]
+  jobs    Job[]
+  @@index([tenantId, createdAt])
+  @@index([tenantId, status, createdAt])
+}
+
+model KnowledgeChunk {
+  id        String                 @id @default(cuid())
+  tenantId  String
+  sourceId  String
+  idx       Int
+  content   String
+  embedding Unsupported("vector")?
+
+  meta      Json?
+  createdAt DateTime @default(now())
+
+  tenant Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  source KnowledgeSource @relation(fields: [sourceId], references: [id], onDelete: Cascade)
+
+  @@unique([sourceId, idx])
+  @@index([tenantId, sourceId])
+}
+
+model Job {
+  id        String    @id @default(cuid())
+  tenantId  String
+  type      JobType
+  status    JobStatus @default(QUEUED)
+  sourceId  String?
+  attempts  Int       @default(0)
+  lastError String?
+  payload   Json?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  source KnowledgeSource? @relation(fields: [sourceId], references: [id], onDelete: SetNull)
+  @@index([tenantId, status, createdAt])
+  @@index([tenantId, type, status])
+  @@index([sourceId])
+}
+
+model AiFeedback {
+  id        String         @id @default(cuid())
+  tenantId  String
+  ticketId  String
+  userId    String
+  rating    FeedbackRating
+  comment   String?
+  createdAt DateTime @default(now())
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  ticket Ticket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  @@index([tenantId, createdAt])
+  @@index([ticketId, createdAt])
+}
+
+model UsageEvent {
+  id        String         @id @default(cuid())
+  tenantId  String
+  userId    String?
+  type      UsageEventType
+  amount    Int            @default(1)
+  meta      Json?
+  createdAt DateTime       @default(now())
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user   User?  @relation(fields: [userId], references: [id], onDelete: SetNull)
+  @@index([tenantId, type, createdAt])
+}
+
+model Entitlement {
+  id               String   @id @default(cuid())
+  tenantId          String  @unique
+  maxAgents         Int     @default(3)
+  maxKbSources      Int     @default(10)
+  maxAiMsgsPerMonth Int     @default(200)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+}
