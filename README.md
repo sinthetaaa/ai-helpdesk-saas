@@ -13,7 +13,7 @@ for ingestion jobs, and a Next.js web app.
 - Usage + entitlements scaffolding (limits for KB sources, AI calls, members)
 - Audit logging and job tracking for worker tasks
 
-## Core Features (Detailed)
+## Core Features 
 
 - **Auth & tenants**: email/password signup + login, tenant creation, invites, role-based access
 - **Tickets**: status and priority management, assignment rules, comments, and audit logs
