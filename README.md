@@ -275,4 +275,4 @@ Web (`apps/web`):
 
 ## License
 
-Private/UNLICENSED for now. Update this section if you want to open source it.
+Private/UNLICENSED for now.
